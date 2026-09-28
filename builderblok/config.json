@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "site": {
+    "name": "My BuilderBlok site",
+    "defaultLocale": "en"
+  },
+  "theme": {}
+}
