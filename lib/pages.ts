@@ -8,6 +8,8 @@ export type PageBlock = {
   props: Record<string, string | number | boolean>;
   styles: Partial<Record<'desktop' | 'tablet' | 'mobile', Record<string, string>>>;
   children?: PageBlock[];
+  /** collection blocks only: the rows BuilderBlok resolved at publish */
+  items?: Record<string, string>[];
 };
 
 export type PageFile = {

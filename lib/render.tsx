@@ -110,12 +110,52 @@ function Block({ block }: { block: PageBlock }): ReactNode {
     }
     case 'divider':
       return <hr {...common} />;
-    /* collections render from a live data source, which the static site does not have yet */
     case 'collection':
-      return null;
+      return <Collection {...common} items={block.items ?? []} />;
     default:
       return null;
   }
+}
+
+const TITLE_KEY = /(^|_)(title|heading|headline|name|question)$/i;
+const IMAGE_URL = /^https?:\/\/\S+\.(png|jpe?g|gif|webp|avif|svg)(\?\S*)?$/i;
+const LINK_URL = /^(https?:\/\/|\/)\S*$/;
+
+/**
+ * A collection's rows as a list of cards. Each row is key → value from the
+ * content store: the title-like key becomes the card heading, an image URL
+ * its picture, a URL a link, and everything else a line of text.
+ */
+function Collection({ items, className, id }: { items: Record<string, string>[]; className: string; id?: string }) {
+  if (!items.length) return null;
+
+  return (
+    <div className={className} id={id} style={{ display: 'grid', gap: '16px' }}>
+      {items.map((row, index) => {
+        const entries = Object.entries(row);
+        const title = entries.find(([key]) => TITLE_KEY.test(key));
+        const image = entries.find(([, value]) => IMAGE_URL.test(value));
+        const rest = entries.filter((entry) => entry !== title && entry !== image);
+
+        return (
+          <article key={index} style={{ padding: '20px', border: '1px solid #e2e8f0', borderRadius: '12px' }}>
+            {image && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={image[1]} alt={title?.[1] ?? ''} style={{ width: '100%', borderRadius: '8px', marginBottom: '12px' }} />
+            )}
+            {title && <h3 style={{ margin: '0 0 8px', fontSize: '18px' }}>{title[1]}</h3>}
+            {rest.map(([key, value]) =>
+              LINK_URL.test(value) ? (
+                <a key={key} href={safeHref(value)} style={{ display: 'block', marginTop: '4px' }}>{key.replace(/_/g, ' ')}</a>
+              ) : (
+                <p key={key} style={{ margin: '0 0 6px', whiteSpace: 'pre-line' }}>{value}</p>
+              ),
+            )}
+          </article>
+        );
+      })}
+    </div>
+  );
 }
 
 function embedUrl(url: string) {
