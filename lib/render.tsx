@@ -1,5 +1,7 @@
 import type { CSSProperties, ReactNode } from 'react';
+import Script from 'next/script';
 import type { PageBlock, PageFile } from './pages';
+import { hiddenAtStart, hideUntilReady, runtimeInteractions, runtimeScript } from './interactions';
 
 /**
  * Renders a BuilderBlok page the way the builder's canvas draws it.
@@ -9,7 +11,8 @@ import type { PageBlock, PageFile } from './pages';
  * `@media` rules — inline styles could not respond to the viewport.
  */
 export function RenderPage({ page }: { page: PageFile }) {
-  const css: string[] = [];
+  /* animations the builder's section presets refer to by name */
+  const css: string[] = [KEYFRAMES];
 
   const walk = (blocks: PageBlock[]) =>
     blocks.forEach((block) => {
@@ -32,21 +35,72 @@ export function RenderPage({ page }: { page: PageFile }) {
     if (body) css.push(`@media (max-width:${page.breakpoints[bp]}px){${body}}`);
   }
 
+  const all: PageBlock[] = [];
+  const flatten = (blocks: PageBlock[]) =>
+    blocks.forEach((block) => {
+      all.push(block);
+      block.children && flatten(block.children);
+    });
+  flatten(page.blocks);
+
+  /* hover / focus / pressed apply at every width, after the breakpoints they layer over */
+  for (const block of all) {
+    for (const [state, pseudo] of STATES) css.push(rule(block, state, pseudo));
+  }
+
+  const interactions = runtimeInteractions(all);
+  css.push(hideUntilReady(hiddenAtStart(interactions)));
+
   return (
     <>
+      {/* marks the page as scripted before anything paints, so an element that
+          animates in is hidden from the start — without JS it simply shows */}
+      {interactions.length > 0 && (
+        <script dangerouslySetInnerHTML={{ __html: "document.documentElement.classList.add('bb-js')" }} />
+      )}
       <style dangerouslySetInnerHTML={{ __html: css.filter(Boolean).join('') }} />
+      {/* after the block rules, so it wins at equal specificity; `<\/style` is
+          the same CSS but cannot end the tag early */}
+      {page.customCss && (
+        <style dangerouslySetInnerHTML={{ __html: page.customCss.replace(/<\/style/gi, '<\\/style') }} />
+      )}
       {page.blocks.map((block) => (
         <Block key={block.id} block={block} />
       ))}
+      {interactions.length > 0 && (
+        <Script id={`bb-ix-${page.slug}`} strategy="afterInteractive">
+          {runtimeScript(interactions)}
+        </Script>
+      )}
+      {/* its own function scope, so its declarations do not collide with anything global */}
+      {page.customJs && (
+        <Script id={`bb-js-${page.slug}`} strategy="afterInteractive">
+          {`(function(){\n${page.customJs}\n})();`}
+        </Script>
+      )}
     </>
   );
 }
 
+const KEYFRAMES = '@keyframes bb-marquee{from{transform:translateX(0)}to{transform:translateX(-50%)}}';
+
 const cls = (block: PageBlock) => `bb-${block.id.replace(/[^a-zA-Z0-9_-]/g, '')}`;
 
+/** The element's own class plus the ones set in the builder, for the page's custom CSS. */
+const classes = (block: PageBlock) =>
+  [cls(block), ...str(block.props.className).split(/\s+/).filter((name) => /^-?[_a-zA-Z][\w-]*$/.test(name))].join(' ');
+
+const STATES = [
+  ['hover', ':hover'],
+  ['focus', ':focus'],
+  ['active', ':active'],
+] as const;
+
+type StyleKey = 'desktop' | 'tablet' | 'mobile' | (typeof STATES)[number][0];
+
 /** camelCase → kebab-case, and nothing that could close the style tag. */
-function rule(block: PageBlock, bp: 'desktop' | 'tablet' | 'mobile'): string {
-  const styles = block.styles?.[bp];
+function rule(block: PageBlock, key: StyleKey, pseudo = ''): string {
+  const styles = block.styles?.[key];
   if (!styles) return '';
 
   const decls = Object.entries(styles)
@@ -54,7 +108,7 @@ function rule(block: PageBlock, bp: 'desktop' | 'tablet' | 'mobile'): string {
     .map(([key, value]) => `${key.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)}:${value}`)
     .join(';');
 
-  return decls ? `.${cls(block)}{${decls}}` : '';
+  return decls ? `.${cls(block)}${pseudo}{${decls}}` : '';
 }
 
 const str = (value: unknown) => (value === undefined || value === null ? '' : String(value));
@@ -68,7 +122,7 @@ const safeHref = (value: unknown) => {
 function Block({ block }: { block: PageBlock }): ReactNode {
   const { props } = block;
   const children = block.children?.map((child) => <Block key={child.id} block={child} />);
-  const common = { className: cls(block), id: props.htmlId ? str(props.htmlId) : undefined };
+  const common = { className: classes(block), id: props.htmlId ? str(props.htmlId) : undefined };
 
   switch (block.type) {
     case 'section':
@@ -110,6 +164,23 @@ function Block({ block }: { block: PageBlock }): ReactNode {
     }
     case 'divider':
       return <hr {...common} />;
+    case 'languages':
+      return (
+        <nav {...common} aria-label="Language">
+          {(block.links ?? []).map((link) => (
+            <a
+              key={link.locale}
+              href={link.href}
+              hrefLang={link.locale}
+              lang={link.locale}
+              aria-current={link.current ? 'page' : undefined}
+              style={{ color: 'inherit', fontWeight: link.current ? 600 : 400, textDecoration: link.current ? 'none' : 'underline' }}
+            >
+              {link.label}
+            </a>
+          ))}
+        </nav>
+      );
     case 'collection':
       return <Collection {...common} items={block.items ?? []} />;
     default:

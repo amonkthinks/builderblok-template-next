@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "tracking": {
+    "gtmId": null,
+    "gaId": null
+  },
+  "code": {
+    "head": null,
+    "bodyStart": null,
+    "bodyEnd": null
+  },
+  "indexing": true,
+  "sitemap": {
+    "enabled": true,
+    "exclude": []
+  }
+}
